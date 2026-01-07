@@ -186,9 +186,8 @@ GERI_DONUTLER = {
     "Genel": "Bu mesaj topluluk kurallarına uygun görünmüyor. Lütfen daha nazik bir ifade kullanmayı dene."
 }
 
-# --- PDF İŞLEMLERİ (VELİ RAPORU DÜZELTİLDİ) ---
+# --- PDF İŞLEMLERİ ---
 def tr_pdf(text):
-    """PDF için Türkçe karakter düzeltmesi"""
     degisim = str.maketrans("ğĞıİşŞçÇöÖüÜ", "gGiIsScCoOuU")
     return text.translate(degisim)
 
@@ -214,11 +213,10 @@ def create_pdf_report(score, history, name="Öğrenci"):
     pdf.set_text_color(0, 0, 0)
     pdf.cell(0, 10, tr_pdf("1. DIJITAL VATANDASLIK PUANI"), ln=True)
     
-    # Bar Chart Arkaplan
+    # Bar
     pdf.set_fill_color(240, 240, 240)
     pdf.rect(10, 55, 190, 15, 'F')
     
-    # Bar Chart Dolgu
     if score >= 80: pdf.set_fill_color(76, 175, 80)
     elif score >= 50: pdf.set_fill_color(255, 152, 0)
     else: pdf.set_fill_color(244, 67, 54)
@@ -239,7 +237,6 @@ def create_pdf_report(score, history, name="Öğrenci"):
     pdf.cell(0, 10, tr_pdf("2. OTURUM ISTATISTIKLERI"), ln=True)
     
     toplam_mesaj = len(history)
-    # "Normal" olmayan her şey (Vazgeçilen, Engellenen, Zorbalık) risk olarak sayılır
     sorunlu_mesaj = sum(1 for h in history if "Normal" not in h['Sonuç'])
     guvenli_mesaj = toplam_mesaj - sorunlu_mesaj
     
@@ -251,7 +248,7 @@ def create_pdf_report(score, history, name="Öğrenci"):
     pdf.set_text_color(0, 0, 0)
     pdf.ln(10)
     
-    # --- 3. PEDAGOJİK DEĞERLENDİRME ---
+    # 3. Pedagojik
     pdf.set_font("Arial", 'B', 14)
     pdf.cell(0, 10, tr_pdf("3. PEDAGOJIK DEGERLENDIRME VE TAVSIYE"), ln=True)
     
@@ -272,7 +269,7 @@ def create_pdf_report(score, history, name="Öğrenci"):
     pdf.multi_cell(0, 8, tr_pdf(tavsiye))
     pdf.ln(10)
 
-    # --- 4. ENGELLENEN MESAJLAR LİSTESİ ---
+    # 4. Liste
     pdf.set_font("Arial", 'B', 14)
     pdf.cell(0, 10, tr_pdf("4. ENGELLENEN ICERIKLER VE GIRISIMLER"), ln=True)
     pdf.set_font("Arial", '', 10)
@@ -321,23 +318,21 @@ def model_yukle():
         current_dir = os.path.dirname(os.path.abspath(__file__))
         model_path = os.path.join(current_dir, "siber_kalkan_modeli")
         
-        # 1. YEREL MODEL KONTROLÜ (Bilgisayarın için)
+        # 1. YEREL MODEL KONTROLÜ (Anaconda)
         if os.path.exists(model_path):
             tokenizer = BertTokenizer.from_pretrained(model_path, local_files_only=True)
             model = BertForSequenceClassification.from_pretrained(model_path, local_files_only=True)
             model_type = "local"
-        # 2. BULUT/GITHUB KONTROLÜ (Jüri Linki için)
         else:
-            # Model bulunamazsa internetten Duygu Analizi modelini indir
-            # Bu model "Negatif" duyguyu yakalar (Zorbalık gibi davranır)
-            model_name = "savasy/bert-base-turkish-sentiment-cased" 
+            # 2. BULUT MODEL KONTROLÜ (GitHub/Streamlit Cloud)
+            # BURADA AKILLI DUYGU ANALİZİ MODELİ KULLANIYORUZ (Base model yerine)
+            model_name = "savasy/bert-base-turkish-sentiment-cased"
             tokenizer = BertTokenizer.from_pretrained(model_name)
             model = BertForSequenceClassification.from_pretrained(model_name)
             model_type = "cloud"
-            
         return tokenizer, model, model_type
     except Exception as e:
-        st.error(f"Model yüklenirken hata oluştu: {e}")
+        st.error(f"Model yüklenirken hata: {e}")
         return None, None, None
 
 tokenizer, model, model_type = model_yukle()
@@ -357,8 +352,6 @@ def veriyi_excele_kaydet(metin, etiket, skor, kaynak):
 # ==========================================
 def show_data_editor():
     st.title("📝 Veri Seti Düzenleme Paneli")
-    st.info("Bu ekranda veri tabanındaki kelimeleri silebilir, kategorilerini değiştirebilir veya yeni veri ekleyebilirsiniz.")
-
     if not os.path.exists(DOSYA_ADI):
         st.error(f"Henüz bir veri dosyası ({DOSYA_ADI}) bulunmuyor.")
         if st.button("⬅️ Panele Dön"):
@@ -379,26 +372,22 @@ def show_data_editor():
         key="editor",
         hide_index=True,
         column_config={
-            "Metin": st.column_config.TextColumn("İfade / Cümle", help="Zorbalık içeren veya normal metin"),
+            "Metin": st.column_config.TextColumn("İfade / Cümle"),
             "Etiket": st.column_config.SelectboxColumn("Kategori", options=["Siber Zorbalık", "Tehdit", "Küfür / Hakaret", "Taciz", "Normal / Güvenli", "Engellendi", "Eğitim-Engellendi"], required=True),
-            "Kaynak": st.column_config.TextColumn("Veri Kaynağı", disabled=True),
-            "AI_Skoru": st.column_config.TextColumn("Skor", disabled=True),
-            "Tarih": st.column_config.TextColumn("Tarih", disabled=True)
         }
     )
 
     col1, col2 = st.columns([1, 4])
     with col1:
-        if st.button("💾 GÜNCELLE VE KAYDET", type="primary"):
+        if st.button("💾 KAYDET", type="primary"):
             try:
                 edited_df.to_excel(DOSYA_ADI, index=False)
-                st.success("✅ Veri seti başarıyla güncellendi!")
+                st.success("Kaydedildi!")
                 time.sleep(1)
                 st.rerun()
-            except Exception as e:
-                st.error(f"Kaydetme hatası: {e}")
+            except: st.error("Hata")
     with col2:
-        if st.button("⬅️ PANELE DÖN"):
+        if st.button("⬅️ GERİ"):
             st.session_state.page = 'backend'
             st.rerun()
 
@@ -408,96 +397,63 @@ def show_data_editor():
 def show_backend():
     with st.sidebar:
         st.image("https://cdn-icons-png.flaticon.com/512/9471/9471031.png", width=100)
-        st.title("SiberKalkan v1.0") 
+        st.title("SiberKalkan v2.1") 
         st.caption("Yönetici Kontrol Paneli")
-        
         st.markdown("---")
-        st.subheader("⚙️ Simülasyon Ayarı")
-        mod_secimi = st.radio(
-            "Öğrenci Ekranı Modu:",
-            ("Oyun Modu (Puanlı)", "Eğitim Modu (Katı Kurallı)")
-        )
-        st.session_state.sim_mode = mod_secimi
-        
-        if st.button("📲 MOBİL SİMÜLASYON", use_container_width=True):
-            st.session_state.page = 'mobile'; st.rerun()
-            
+        st.session_state.sim_mode = st.radio("Öğrenci Ekranı Modu:", ("Oyun Modu (Puanlı)", "Eğitim Modu (Katı Kurallı)"))
+        if st.button("📲 MOBİL SİMÜLASYON", use_container_width=True): st.session_state.page = 'mobile'; st.rerun()
         st.markdown("---")
         if os.path.exists(DOSYA_ADI):
-            with open(DOSYA_ADI, "rb") as f: st.download_button("📥 Veri Setini İndir", f, file_name="SiberKalkan_Data.xlsx")
+            with open(DOSYA_ADI, "rb") as f: st.download_button("📥 Veri İndir", f, file_name="SiberKalkan_Data.xlsx")
         
         st.header("🧠 Modeli Eğit")
-        st.info("AI hata yaparsa buradan doğrusunu öğretin.")
         input_key = f"train_input_{st.session_state.train_key_counter}"
-        egitim_metni = st.text_area("Örnek Cümle:", placeholder="Kelime giriniz...", height=80, key=input_key)
+        egitim_metni = st.text_area("Örnek Cümle:", height=80, key=input_key)
         egitim_etiketi = st.selectbox("Bu cümle nedir?", ["Siber Zorbalık", "Tehdit", "Küfür / Hakaret", "Taciz", "Normal / Güvenli"])
         
         if st.button("EĞİT VE KAYDET"):
             if egitim_metni:
                 veriyi_excele_kaydet(egitim_metni, egitim_etiketi, "1.0 (Manuel)", "Kullanıcı (Eğitim Verisi)")
-                st.success("Veri hafızaya alındı! ✅")
+                st.success("Kaydedildi!")
                 st.session_state.history.insert(0, {"Metin": egitim_metni, "Sonuç": egitim_etiketi, "Kaynak": "Manuel Eğitim"})
                 st.session_state.train_key_counter += 1; st.rerun()
-            else: st.warning("Metin girmeyi unuttunuz.")
 
         st.markdown("---")
-        if st.button("✏️ VERİ SETİNİ DÜZENLE"):
-            st.session_state.page = 'data_editor'
-            st.rerun()
+        if st.button("✏️ VERİ DÜZENLE"): st.session_state.page = 'data_editor'; st.rerun()
 
-    col1, col2 = st.columns([3, 1])
-    with col1: st.markdown("## 🛡️ SiberKalkan Tehdit Analiz Merkezi")
-    with col2: st.success("🟢 Sistem Aktif")
-    col_input, col_result = st.columns([1, 1], gap="medium")
-    with col_input:
-        user_input = st.text_area("Analiz edilecek mesaj:", height=150, placeholder="Örn: Buraya şüpheli bir metin girin...")
-        analyze_btn = st.button("🚀 ANALİZİ BAŞLAT", use_container_width=True)
-    with col_result:
-        if analyze_btn and user_input and model:
-            kural_ihlali, yakalanan_kelime = kara_liste_kontrolu(user_input)
-            hafiza_ihlali, hafiza_etiketi = excel_hafiza_kontrolu(user_input)
-            if kural_ihlali:
-                score_neg = 0.99; score_pos = 0.01; karar_kaynagi = f"Güvenlik Protokolü ({yakalanan_kelime})" 
-                sonuc_etiketi = "Küfür / Hakaret"; is_bullying = True
-            elif hafiza_ihlali:
-                score_neg = 1.0; score_pos = 0.0; karar_kaynagi = "Öğrenilmiş Hafıza (Excel)" 
-                sonuc_etiketi = hafiza_etiketi; is_bullying = True
+    st.subheader("🛡️ SiberKalkan Tehdit Analiz Merkezi")
+    user_input = st.text_area("Analiz:", height=100)
+    if st.button("🚀 ANALİZİ BAŞLAT", use_container_width=True):
+        if user_input and model:
+            kural, kelime = kara_liste_kontrolu(user_input)
+            hafiza, etiket = excel_hafiza_kontrolu(user_input)
+            if kural:
+                score_neg = 0.99; karar = f"Yasaklı ({kelime})"; sonuc = "Küfür / Hakaret"; is_bullying = True
+            elif hafiza:
+                score_neg = 1.0; karar = "Hafıza"; sonuc = etiket; is_bullying = True
             else:
                 inputs = tokenizer(user_input, return_tensors="pt", truncation=True, padding=True, max_length=64)
                 outputs = model(**inputs)
                 probs = F.softmax(outputs.logits, dim=1)
                 
-                # --- MODEL TÜRÜNE GÖRE SKOR HESAPLAMA ---
+                # --- MODEL UYUMLULUĞU ---
                 if model_type == "cloud":
-                    # Cloud (savasy) modelinde: Label 1: Negatif
-                    score_neg = probs[0][1].item() 
+                    score_neg = probs[0][1].item() # Cloud (Savasy): 1=Negatif
                 else:
-                    # Yerel modelde (senin eğittiğin): Label 0: Negatif/Zorbalık
-                    score_neg = probs[0][0].item()
+                    score_neg = probs[0][0].item() # Local (Senin model): 0=Zorbalık
 
-                score_pos = 1.0 - score_neg
-                karar_kaynagi = "SiberKalkan AI"; is_bullying = score_neg > 0.60
-                sonuc_etiketi = "Siber Zorbalık" if is_bullying else "Normal / Güvenli"
+                karar = "Yapay Zeka"; is_bullying = score_neg > 0.60
+                sonuc = "Siber Zorbalık" if is_bullying else "Normal"
                 
-            st.subheader("📊 Analiz Raporu")
-            if is_bullying: st.error(f"🚨 **TESPİT EDİLDİ: {sonuc_etiketi.upper()}**"); st.progress(score_neg)
-            else: st.success(f"✅ **GÜVENLİ İÇERİK**"); st.progress(score_pos)
-            veriyi_excele_kaydet(user_input, sonuc_etiketi, f"{score_neg:.4f}", karar_kaynagi)
-            st.session_state.history.insert(0, {"Metin": user_input, "Sonuç": sonuc_etiketi, "Kaynak": karar_kaynagi})
+            if is_bullying: st.error(f"🚨 TESPİT: {sonuc}"); st.progress(score_neg)
+            else: st.success("✅ GÜVENLİ"); st.progress(1.0 - score_neg)
+            st.session_state.history.insert(0, {"Metin": user_input, "Sonuç": sonuc, "Kaynak": karar})
+            veriyi_excele_kaydet(user_input, sonuc, f"{score_neg:.4f}", karar)
+
     st.markdown("---")
-    c_head, c_clear = st.columns([4,1])
-    with c_head: st.subheader("📝 Son İşlemler (Oturum Geçmişi)")
-    with c_clear: 
-        if st.button("🗑️ Tümünü Temizle"): st.session_state.history = []; st.rerun()
-    if st.session_state.history:
-        for i, row in enumerate(st.session_state.history):
-            c1, c2, c3, c4 = st.columns([3, 2, 2, 1])
-            c1.text(row['Metin'][:40])
-            if "Normal" in row['Sonuç']: c2.success(row['Sonuç'])
-            else: c2.error(row['Sonuç'])
-            c3.caption(row['Kaynak'])
-            if c4.button("Sil", key=f"del_{i}"): del st.session_state.history[i]; st.rerun()
-    else: st.info("Veri yok.")
+    if st.button("🗑️ Temizle"): st.session_state.history = []; st.rerun()
+    for row in st.session_state.history:
+        st.text(f"{row['Metin']} -> {row['Sonuç']}")
 
 # ==========================================
 # 📱 SAYFA 2: TABLET SİMÜLASYONU
@@ -505,224 +461,122 @@ def show_backend():
 def show_mobile():
     col_l, col_m, col_r = st.columns([1, 8, 1])
     with col_l:
-        if st.button("⬅️ Panele Dön"): st.session_state.page = 'backend'; st.rerun()
-        
+        if st.button("⬅️ Geri"): st.session_state.page = 'backend'; st.rerun()
         st.markdown("---")
-        # PDF BUTONU
         if st.session_state.history and st.session_state.student_name:
             pdf_data = create_pdf_report(st.session_state.user_score, st.session_state.history, st.session_state.student_name)
-            st.download_button(
-                label="📄 Veli Karnesi",
-                data=pdf_data,
-                file_name="SiberKalkan_Veli_Raporu.pdf",
-                mime="application/pdf",
-                use_container_width=True
-            )
+            st.download_button("📄 Karne İndir", data=pdf_data, file_name="karnem.pdf", mime="application/pdf", use_container_width=True)
     
     with col_m:
-        # --- GİRİŞ EKRANI ---
         if not st.session_state.student_name:
-            st.markdown("""
-            <div class="login-container">
-                <div class="login-card">
-                    <div class="login-logo">🛡️</div>
-                    <div class="login-title">SiberKalkan'a Hoş Geldin</div>
-                    <div style="color: #666; font-size: 14px; margin-bottom: 20px;">
-                        Simülasyonu başlatmak için lütfen adınızı giriniz.
-                    </div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            _, col_form, _ = st.columns([1, 2, 1])
-            with col_form:
-                with st.form("login_form"):
-                    name_input = st.text_input("Adın Soyadın:", placeholder="Örn: Ali Veli")
-                    if st.form_submit_button("SİMÜLASYONU BAŞLAT ▶", use_container_width=True):
-                        if name_input:
-                            st.session_state.student_name = name_input
-                            st.rerun()
+            st.markdown("""<div class="login-container"><div class="login-card"><div class="login-logo">🛡️</div><div class="login-title">Giriş Yap</div></div></div>""", unsafe_allow_html=True)
+            name = st.text_input("Adın:")
+            if st.button("BAŞLA"):
+                if name: st.session_state.student_name = name; st.rerun()
             return
 
-        # --- SAKİNLEŞME MODU ---
         if st.session_state.get('breathing_phase'):
             placeholder = st.empty()
             for i in range(4, 0, -1):
-                placeholder.markdown(f"""
-                <div class="tablet-screen-top" style="align-items: center; justify-content: center; background-color: #E1F5FE;">
-                    <div class="calm-text">🧘‍♂️ Çok Öfkeli Görünüyorsun...</div>
-                    <div class="calm-subtext">Mesajını analiz etmeden önce derin bir nefes al 🧘</div>
-                    <div class="calm-circle">{i}</div>
-                    <div class="calm-subtext">Sakinleşiyoruz...</div>
-                </div>
-                """, unsafe_allow_html=True)
-                time.sleep(1.2) 
-            
-            placeholder.empty()
+                placeholder.markdown(f"""<div class="tablet-screen-top"><div class="calm-circle">{i}</div><div class="calm-text">Sakinleş...</div></div>""", unsafe_allow_html=True)
+                time.sleep(1.2)
             st.session_state.breathing_phase = False
             st.session_state.alert_active = True
             st.rerun()
             return 
 
         mode = st.session_state.sim_mode
-        is_game_mode = (mode == "Oyun Modu (Puanlı)")
+        is_game = (mode == "Oyun Modu (Puanlı)")
         
-        # --- CHAT İÇERİĞİ ---
         chat_html = ""
         for msg in st.session_state.chat_log:
-            role_class = "msg-incoming" if msg['role'] == 'incoming' else "msg-outgoing"
-            chat_html += f"<div class='{role_class}'>{msg['text']}</div>"
+            role = "msg-incoming" if msg['role'] == 'incoming' else "msg-outgoing"
+            chat_html += f"<div class='{role}'>{msg['text']}</div>"
         
-        if not st.session_state.get('alert_active') and st.session_state.chat_turn == "counterpart":
-            chat_html += f"""
-            <div style='clear:both;'></div>
-            <div class='typing-indicator'>💬 Karşı taraf yazıyor...</div>
-            """
-
         if st.session_state.get('alert_active'):
-             chat_html += f"""
-             <div style='clear:both;'></div>
-             <div class='msg-pending'>
-                {st.session_state.temp_bad_msg} <br>
-                <small>⛔ Onay Bekliyor</small>
-             </div>
-             """
+             chat_html += f"<div class='msg-pending'>{st.session_state.temp_bad_msg}<br><small>⛔ Bekliyor</small></div>"
 
-        score_display = f"<span class='score-board'>⭐ {st.session_state.user_score}</span>" if is_game_mode else ""
-        
-        st.markdown(f"""
-        <div class="tablet-screen-top">
-            <div class="tablet-header">
-                👤 {st.session_state.student_name} | SiberKalkan {score_display}
-            </div>
-            {chat_html}
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f"""<div class="tablet-screen-top"><div class="tablet-header">👤 {st.session_state.student_name} | ⭐ {st.session_state.user_score}</div>{chat_html}</div>""", unsafe_allow_html=True)
         
         if not st.session_state.get('alert_active'):
-            # --- SOHBET ---
             if st.session_state.chat_turn == "student":
-                with st.form("chat_form_input", clear_on_submit=True):
-                    c_in, c_btn = st.columns([4, 1])
-                    with c_in:
-                        user_msg = st.text_input("Mesajın:", placeholder="Bir şeyler yaz...", label_visibility="collapsed")
-                    with c_btn:
-                        submitted = st.form_submit_button("GÖNDER", use_container_width=True)
+                with st.form("chat"):
+                    c1, c2 = st.columns([4,1])
+                    with c1: u_msg = st.text_input("Mesaj:", label_visibility="collapsed")
+                    with c2: sub = st.form_submit_button("GÖNDER")
                     
-                    if submitted and user_msg:
-                        is_bullying = False; reason = ""
-                        violation_type = "Genel"
+                    if sub and u_msg:
+                        kural, k_word = kara_liste_kontrolu(u_msg)
+                        hafiza, h_etiket = excel_hafiza_kontrolu(u_msg)
+                        bad = False
                         
-                        kural, kelime = kara_liste_kontrolu(user_msg)
-                        hafiza, etiket = excel_hafiza_kontrolu(user_msg)
-                        
-                        if kural: 
-                            is_bullying=True; reason=f"Yasaklı Kelime: {kelime}"; violation_type = "Küfür / Hakaret"
-                        elif hafiza: 
-                            is_bullying=True; reason=f"Tespit Edilen: {etiket}"; violation_type = etiket
+                        if kural: bad=True; reason=f"Yasaklı: {k_word}"; typ="Küfür"
+                        elif hafiza: bad=True; reason=f"Hafıza: {h_etiket}"; typ=h_etiket
                         else:
-                            inputs = tokenizer(user_msg, return_tensors="pt", truncation=True, padding=True, max_length=64)
+                            inputs = tokenizer(u_msg, return_tensors="pt", truncation=True, padding=True, max_length=64)
                             outputs = model(**inputs)
                             probs = F.softmax(outputs.logits, dim=1)
-
+                            
+                            # --- MODEL UYUMLULUĞU (MOBİL) ---
                             if model_type == "cloud":
                                 neg_score = probs[0][1].item()
                             else:
                                 neg_score = probs[0][0].item()
 
-                            if neg_score > 0.60: 
-                                is_bullying=True; reason="Saldırgan Dil"; violation_type = "Siber Zorbalık"
+                            if neg_score > 0.60: bad=True; reason="Zorbalık"; typ="Siber Zorbalık"
                         
-                        if is_bullying:
-                            st.session_state.temp_bad_msg = user_msg
+                        if bad:
+                            st.session_state.temp_bad_msg = u_msg
                             st.session_state.temp_reason = reason
-                            st.session_state.temp_type = violation_type
+                            st.session_state.temp_type = typ
                             st.session_state.breathing_phase = True
                             st.rerun()
                         else:
-                            st.session_state.chat_log.append({"role": "outgoing", "text": user_msg})
-                            if is_game_mode: st.session_state.user_score += 10 
-                            st.session_state.history.insert(0, {"Metin": user_msg, "Sonuç": "Normal", "Kaynak": "Mobil"})
+                            st.session_state.chat_log.append({"role": "outgoing", "text": u_msg})
+                            if is_game: st.session_state.user_score += 10
+                            st.session_state.history.insert(0, {"Metin": u_msg, "Sonuç": "Normal", "Kaynak": "Mobil"})
                             st.session_state.chat_turn = "counterpart"
                             st.rerun()
-            
             else:
-                with st.form("counterpart_form", clear_on_submit=True):
-                    c_in_cp, c_btn_cp = st.columns([4, 1])
-                    with c_in_cp:
-                        cp_msg = st.text_input("Senaryo Cevabı:", placeholder="Karşı tarafın cevabını girin...", label_visibility="collapsed")
-                    with c_btn_cp:
-                        submitted_cp = st.form_submit_button("CEVAPLA", use_container_width=True)
-                    
-                    if submitted_cp and cp_msg:
+                with st.form("cp"):
+                    c1, c2 = st.columns([4,1])
+                    with c1: cp_msg = st.text_input("Cevap:", label_visibility="collapsed")
+                    with c2: sub = st.form_submit_button("CEVAPLA")
+                    if sub and cp_msg:
                         st.session_state.chat_log.append({"role": "incoming", "text": cp_msg})
                         st.session_state.chat_turn = "student"
                         st.rerun()
-
         else:
-            with st.form("chat_form_alert"):
-                if is_game_mode:
-                    st.markdown(f"""
-                    <div class="tablet-alert-box">
-                        ⚠️ DUR! SiberKalkan Tehdit Algıladı: {st.session_state.temp_reason}
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
+            with st.form("alert"):
+                st.error(f"⚠️ TESPİT EDİLDİ: {st.session_state.temp_reason}")
+                if is_game:
                     c1, c2 = st.columns(2)
                     with c1:
-                        # --- OYUN MODUNDA VAZGEÇME KAYDI ---
-                        if st.form_submit_button("😇 Vazgeç (+50 Puan)", use_container_width=True):
+                        if st.form_submit_button("😇 Vazgeç (+50 Puan)"):
                             st.session_state.user_score += 50
                             st.session_state.alert_active = False
                             st.balloons()
                             veriyi_excele_kaydet(st.session_state.temp_bad_msg, "Engellendi", "1.0", "Mobil-Vazgeçti")
-                            
-                            # EKLENEN KISIM: Veli Raporuna da 'Vazgeçildi' diye ekle
-                            st.session_state.history.insert(0, {
-                                "Metin": st.session_state.temp_bad_msg, 
-                                "Sonuç": "Engellendi (Vazgecti)", 
-                                "Kaynak": "Mobil-Vazgeçti"
-                            })
-                            time.sleep(1.0); st.rerun()
-                            
+                            # --- DÜZELTME: RAPORA EKLEME ---
+                            st.session_state.history.insert(0, {"Metin": st.session_state.temp_bad_msg, "Sonuç": "Engellendi (Vazgecti)", "Kaynak": "Mobil"})
+                            time.sleep(1); st.rerun()
                     with c2:
-                        if st.form_submit_button("😈 Gönder (-20 Puan)", use_container_width=True):
+                        if st.form_submit_button("😈 Gönder (-20 Puan)"):
                             st.session_state.user_score -= 20
                             st.session_state.chat_log.append({"role": "outgoing", "text": st.session_state.temp_bad_msg})
-                            st.session_state.history.insert(0, {"Metin": st.session_state.temp_bad_msg, "Sonuç": "Zorbalık", "Kaynak": "Mobil-İnat"})
-                            st.session_state.alert_active = False; 
+                            st.session_state.history.insert(0, {"Metin": st.session_state.temp_bad_msg, "Sonuç": "Zorbalık", "Kaynak": "Mobil"})
+                            st.session_state.alert_active = False
                             st.session_state.chat_turn = "counterpart"
                             st.rerun()
-                
                 else:
-                    feedback_msg = GERI_DONUTLER.get(st.session_state.temp_type, GERI_DONUTLER["Genel"])
-                    st.markdown(f"""
-                    <div class="tablet-alert-box" style="border-color: #4db6ac; color: #00695c; background-color: #e0f2f1;">
-                        🎓 SİBERKALKAN REHBERLİK SERVİSİ
-                        <div style="font-weight: normal; margin-top: 5px; color: #333;">
-                            "{feedback_msg}"
-                        </div>
-                    </div>
-                    <div class="guide-message">Mesajını düzeltmek için aşağıdaki butona tıkla.</div>
-                    """, unsafe_allow_html=True)
-                    
-                    # --- EĞİTİM MODUNDA DÜZELTME KAYDI ---
-                    if st.form_submit_button("✍️ Anladım, Mesajımı Düzelteceğim", use_container_width=True):
+                    st.info("Eğitim Modu: Mesajını düzeltmelisin.")
+                    if st.form_submit_button("✍️ Düzelt"):
                         st.session_state.alert_active = False
-                        veriyi_excele_kaydet(st.session_state.temp_bad_msg, "Eğitim-Engellendi", "1.0", "Mobil-EğitimModu")
-                        
-                        # EKLENEN KISIM: Veli Raporuna 'Eğitim Engeli' diye ekle
-                        st.session_state.history.insert(0, {
-                            "Metin": st.session_state.temp_bad_msg, 
-                            "Sonuç": "Engellendi (Egitim)", 
-                            "Kaynak": "Mobil-Eğitim"
-                        })
+                        veriyi_excele_kaydet(st.session_state.temp_bad_msg, "Engellendi", "1.0", "Eğitim")
+                        # --- DÜZELTME: RAPORA EKLEME ---
+                        st.session_state.history.insert(0, {"Metin": st.session_state.temp_bad_msg, "Sonuç": "Engellendi (Eğitim)", "Kaynak": "Mobil"})
                         st.rerun()
 
-# --- ANA YÖNLENDİRİCİ ---
-if st.session_state.page == 'backend': 
-    show_backend()
-elif st.session_state.page == 'mobile': 
-    show_mobile()
-elif st.session_state.page == 'data_editor': 
-    show_data_editor()
+if st.session_state.page == 'backend': show_backend()
+elif st.session_state.page == 'mobile': show_mobile()
+elif st.session_state.page == 'data_editor': show_data_editor()
