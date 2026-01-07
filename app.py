@@ -10,7 +10,7 @@ from fpdf import FPDF
 
 # --- 1. SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="SiberKalkan Yönetim Paneli",
+    page_title="SiberKalkan v2.1",
     page_icon="🛡️",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -186,7 +186,7 @@ GERI_DONUTLER = {
     "Genel": "Bu mesaj topluluk kurallarına uygun görünmüyor. Lütfen daha nazik bir ifade kullanmayı dene."
 }
 
-# --- PDF İŞLEMLERİ (AKILLI RAPORLAMA) ---
+# --- PDF İŞLEMLERİ (VELİ RAPORU DÜZELTİLDİ) ---
 def tr_pdf(text):
     """PDF için Türkçe karakter düzeltmesi"""
     degisim = str.maketrans("ğĞıİşŞçÇöÖüÜ", "gGiIsScCoOuU")
@@ -239,7 +239,7 @@ def create_pdf_report(score, history, name="Öğrenci"):
     pdf.cell(0, 10, tr_pdf("2. OTURUM ISTATISTIKLERI"), ln=True)
     
     toplam_mesaj = len(history)
-    # Vazgeçilenler de "Normal" olmadığı için burada sayılacak!
+    # "Normal" olmayan her şey (Vazgeçilen, Engellenen, Zorbalık) risk olarak sayılır
     sorunlu_mesaj = sum(1 for h in history if "Normal" not in h['Sonuç'])
     guvenli_mesaj = toplam_mesaj - sorunlu_mesaj
     
@@ -247,7 +247,7 @@ def create_pdf_report(score, history, name="Öğrenci"):
     pdf.cell(0, 8, tr_pdf(f"- Toplam Islenen Mesaj: {toplam_mesaj}"), ln=True)
     pdf.cell(0, 8, tr_pdf(f"- Guvenli Icerik Sayisi: {guvenli_mesaj}"), ln=True)
     pdf.set_text_color(198, 40, 40)
-    pdf.cell(0, 8, tr_pdf(f"- Engellenen / Vazgecilen Girisim: {sorunlu_mesaj}"), ln=True)
+    pdf.cell(0, 8, tr_pdf(f"- Riskli Girisim / Engellenen: {sorunlu_mesaj}"), ln=True)
     pdf.set_text_color(0, 0, 0)
     pdf.ln(10)
     
@@ -260,12 +260,12 @@ def create_pdf_report(score, history, name="Öğrenci"):
     pdf.set_font("Arial", '', 11)
     
     if risk_orani > 0.30:
-        tavsiye = f"Sayin Veli, {name} simulasyon suresince sistem uyarilariyla puan kazanmis olsa bile, SIK SIK (Mesajlarin %{int(risk_orani*100)}'i) zorbalik iceren ifadeler kullanmaya yeltendi. Sistem engelledigi icin puan dusmemis olabilir ancak cocugun 'Zorbalik Egilimi' ve 'Ofke Kontrolu' konusunda ciddi bir rehberlik destegine ihtiyaci var."
+        tavsiye = f"Sayin Veli, {name} simulasyon suresince sistem uyarilariyla puan kazanmis olsa bile, SIK SIK (Mesajlarin %{int(risk_orani*100)}'i) zorbalik iceren ifadeler kullanmaya yeltendi. Sistem engelledigi icin puan dusmemis olabilir ancak cocugun 'Zorbalik Egilimi' ve 'Ofke Kontrolu' konusunda ciddi bir rehberlik destegine ihtiyaci var. (Asagidaki engellenenler listesine bakiniz)."
     elif risk_orani > 0:
         if score >= 50:
-            tavsiye = f"Sayin Veli, {name} zaman zaman riskli ifadeler kullanmaya yeltenmis ancak SiberKalkan uyarilarini dikkate alarak 'Vazgecme' iradesi gostermistir. Bu, dijital farkindaliginin gelismekte oldugunu gosterir. Yine de asagidaki engellenen mesajlar listesini inceleyerek cocugunuzla iletisim kurmaniz onerilir."
+            tavsiye = f"Sayin Veli, {name} zaman zaman duygusal tepkiler vererek riskli ifadeler kullandi. Sistem uyarisiyla 'Vazgecme' veya 'Duzeltme' davranisi gosterse de, zihninden gecen kelimeler asagidaki listede raporlanmistir. Dijital dil konusunda uyari yapilmasi onerilir."
         else:
-            tavsiye = f"Sayin Veli, {name} riskli ifadeler kullandi ve uyarilara ragmen yeterli duzeltme davranisi gostermedigi icin puani dustu. Dijital empati konusunda desteklenmelidir."
+            tavsiye = f"Sayin Veli, {name} riskli ifadeler kullandi ve uyarilara ragmen israrci davranislar sergiledi. Dijital empati konusunda desteklenmelidir."
     else:
         tavsiye = f"Sayin Veli, {name} dijital iletisimde son derece saygili, temiz ve ornek bir tutum sergiledi. Hicbir riskli girisimde bulunmadi. Tebrik ediyoruz."
     
@@ -321,16 +321,26 @@ def model_yukle():
         current_dir = os.path.dirname(os.path.abspath(__file__))
         model_path = os.path.join(current_dir, "siber_kalkan_modeli")
         
+        # 1. YEREL MODEL KONTROLÜ (Bilgisayarın için)
         if os.path.exists(model_path):
             tokenizer = BertTokenizer.from_pretrained(model_path, local_files_only=True)
             model = BertForSequenceClassification.from_pretrained(model_path, local_files_only=True)
+            model_type = "local"
+        # 2. BULUT/GITHUB KONTROLÜ (Jüri Linki için)
         else:
-            tokenizer = BertTokenizer.from_pretrained("dbmdz/bert-base-turkish-cased")
-            model = BertForSequenceClassification.from_pretrained("dbmdz/bert-base-turkish-cased")
-        return tokenizer, model
-    except: return None, None
+            # Model bulunamazsa internetten Duygu Analizi modelini indir
+            # Bu model "Negatif" duyguyu yakalar (Zorbalık gibi davranır)
+            model_name = "savasy/bert-base-turkish-sentiment-cased" 
+            tokenizer = BertTokenizer.from_pretrained(model_name)
+            model = BertForSequenceClassification.from_pretrained(model_name)
+            model_type = "cloud"
+            
+        return tokenizer, model, model_type
+    except Exception as e:
+        st.error(f"Model yüklenirken hata oluştu: {e}")
+        return None, None, None
 
-tokenizer, model = model_yukle()
+tokenizer, model, model_type = model_yukle()
 
 def veriyi_excele_kaydet(metin, etiket, skor, kaynak):
     yeni_veri = {"Tarih": [datetime.now().strftime("%Y-%m-%d %H:%M:%S")], "Metin": [metin], "Etiket": [etiket], "AI_Skoru": [skor], "Kaynak": [kaynak]}
@@ -456,9 +466,19 @@ def show_backend():
                 inputs = tokenizer(user_input, return_tensors="pt", truncation=True, padding=True, max_length=64)
                 outputs = model(**inputs)
                 probs = F.softmax(outputs.logits, dim=1)
-                score_neg = probs[0][0].item(); score_pos = probs[0][1].item()
+                
+                # --- MODEL TÜRÜNE GÖRE SKOR HESAPLAMA ---
+                if model_type == "cloud":
+                    # Cloud (savasy) modelinde: Label 1: Negatif
+                    score_neg = probs[0][1].item() 
+                else:
+                    # Yerel modelde (senin eğittiğin): Label 0: Negatif/Zorbalık
+                    score_neg = probs[0][0].item()
+
+                score_pos = 1.0 - score_neg
                 karar_kaynagi = "SiberKalkan AI"; is_bullying = score_neg > 0.60
                 sonuc_etiketi = "Siber Zorbalık" if is_bullying else "Normal / Güvenli"
+                
             st.subheader("📊 Analiz Raporu")
             if is_bullying: st.error(f"🚨 **TESPİT EDİLDİ: {sonuc_etiketi.upper()}**"); st.progress(score_neg)
             else: st.success(f"✅ **GÜVENLİ İÇERİK**"); st.progress(score_pos)
@@ -603,7 +623,14 @@ def show_mobile():
                         else:
                             inputs = tokenizer(user_msg, return_tensors="pt", truncation=True, padding=True, max_length=64)
                             outputs = model(**inputs)
-                            if F.softmax(outputs.logits, dim=1)[0][0].item() > 0.60: 
+                            probs = F.softmax(outputs.logits, dim=1)
+
+                            if model_type == "cloud":
+                                neg_score = probs[0][1].item()
+                            else:
+                                neg_score = probs[0][0].item()
+
+                            if neg_score > 0.60: 
                                 is_bullying=True; reason="Saldırgan Dil"; violation_type = "Siber Zorbalık"
                         
                         if is_bullying:
@@ -643,24 +670,21 @@ def show_mobile():
                     
                     c1, c2 = st.columns(2)
                     with c1:
-                        # --- DÜZELTME BURADA YAPILDI! ---
-                        # Öğrenci "Vazgeç" dediğinde olay artık rapora (history) da kaydediliyor.
+                        # --- OYUN MODUNDA VAZGEÇME KAYDI ---
                         if st.form_submit_button("😇 Vazgeç (+50 Puan)", use_container_width=True):
                             st.session_state.user_score += 50
                             st.session_state.alert_active = False
                             st.balloons()
-                            
-                            # Excel'e Kayıt (Zaten vardı)
                             veriyi_excele_kaydet(st.session_state.temp_bad_msg, "Engellendi", "1.0", "Mobil-Vazgeçti")
                             
-                            # EKSİK OLAN KISIM BURASIYDI: Rapor Hafızasına Kayıt
+                            # EKLENEN KISIM: Veli Raporuna da 'Vazgeçildi' diye ekle
                             st.session_state.history.insert(0, {
                                 "Metin": st.session_state.temp_bad_msg, 
-                                "Sonuç": "Engellendi (Vazgeçti)", 
+                                "Sonuç": "Engellendi (Vazgecti)", 
                                 "Kaynak": "Mobil-Vazgeçti"
                             })
-                            
                             time.sleep(1.0); st.rerun()
+                            
                     with c2:
                         if st.form_submit_button("😈 Gönder (-20 Puan)", use_container_width=True):
                             st.session_state.user_score -= 20
@@ -682,14 +706,15 @@ def show_mobile():
                     <div class="guide-message">Mesajını düzeltmek için aşağıdaki butona tıkla.</div>
                     """, unsafe_allow_html=True)
                     
+                    # --- EĞİTİM MODUNDA DÜZELTME KAYDI ---
                     if st.form_submit_button("✍️ Anladım, Mesajımı Düzelteceğim", use_container_width=True):
                         st.session_state.alert_active = False
                         veriyi_excele_kaydet(st.session_state.temp_bad_msg, "Eğitim-Engellendi", "1.0", "Mobil-EğitimModu")
                         
-                        # EĞİTİM MODU İÇİN DE AYNI DÜZELTME
+                        # EKLENEN KISIM: Veli Raporuna 'Eğitim Engeli' diye ekle
                         st.session_state.history.insert(0, {
                             "Metin": st.session_state.temp_bad_msg, 
-                            "Sonuç": "Girişim (Eğitim Modu)", 
+                            "Sonuç": "Engellendi (Egitim)", 
                             "Kaynak": "Mobil-Eğitim"
                         })
                         st.rerun()
