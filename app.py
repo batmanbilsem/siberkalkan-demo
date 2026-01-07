@@ -10,7 +10,7 @@ from fpdf import FPDF
 
 # --- 1. SAYFA AYARLARI ---
 st.set_page_config(
-    page_title="SiberKalkan v2.1",
+    page_title="SiberKalkan v2.2",
     page_icon="🛡️",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -186,7 +186,7 @@ GERI_DONUTLER = {
     "Genel": "Bu mesaj topluluk kurallarına uygun görünmüyor. Lütfen daha nazik bir ifade kullanmayı dene."
 }
 
-# --- PDF İŞLEMLERİ ---
+# --- PDF İŞLEMLERİ (PEDAGOJİK ALGORİTMA DAHİL) ---
 def tr_pdf(text):
     degisim = str.maketrans("ğĞıİşŞçÇöÖüÜ", "gGiIsScCoOuU")
     return text.translate(degisim)
@@ -213,7 +213,7 @@ def create_pdf_report(score, history, name="Öğrenci"):
     pdf.set_text_color(0, 0, 0)
     pdf.cell(0, 10, tr_pdf("1. DIJITAL VATANDASLIK PUANI"), ln=True)
     
-    # Bar
+    # Bar Chart
     pdf.set_fill_color(240, 240, 240)
     pdf.rect(10, 55, 190, 15, 'F')
     
@@ -318,15 +318,14 @@ def model_yukle():
         current_dir = os.path.dirname(os.path.abspath(__file__))
         model_path = os.path.join(current_dir, "siber_kalkan_modeli")
         
-        # 1. YEREL MODEL KONTROLÜ (Anaconda)
+        # 1. YEREL MODEL (Varsa)
         if os.path.exists(model_path):
             tokenizer = BertTokenizer.from_pretrained(model_path, local_files_only=True)
             model = BertForSequenceClassification.from_pretrained(model_path, local_files_only=True)
             model_type = "local"
         else:
-            # 2. BULUT MODEL KONTROLÜ (GitHub/Streamlit Cloud)
-            # BURADA AKILLI DUYGU ANALİZİ MODELİ KULLANIYORUZ (Base model yerine)
-            model_name = "savasy/bert-base-turkish-sentiment-cased"
+            # 2. BULUT MODEL (GitHub/Streamlit)
+            model_name = "savasy/bert-base-turkish-sentiment-cased" 
             tokenizer = BertTokenizer.from_pretrained(model_name)
             model = BertForSequenceClassification.from_pretrained(model_name)
             model_type = "cloud"
@@ -379,15 +378,15 @@ def show_data_editor():
 
     col1, col2 = st.columns([1, 4])
     with col1:
-        if st.button("💾 KAYDET", type="primary"):
+        if st.button("💾 GÜNCELLE VE KAYDET", type="primary"):
             try:
                 edited_df.to_excel(DOSYA_ADI, index=False)
-                st.success("Kaydedildi!")
+                st.success("✅ Güncellendi!")
                 time.sleep(1)
                 st.rerun()
             except: st.error("Hata")
     with col2:
-        if st.button("⬅️ GERİ"):
+        if st.button("⬅️ PANELE DÖN"):
             st.session_state.page = 'backend'
             st.rerun()
 
@@ -397,10 +396,10 @@ def show_data_editor():
 def show_backend():
     with st.sidebar:
         st.image("https://cdn-icons-png.flaticon.com/512/9471/9471031.png", width=100)
-        st.title("SiberKalkan v2.1") 
+        st.title("SiberKalkan v2.2") 
         st.caption("Yönetici Kontrol Paneli")
         st.markdown("---")
-        st.session_state.sim_mode = st.radio("Öğrenci Ekranı Modu:", ("Oyun Modu (Puanlı)", "Eğitim Modu (Katı Kurallı)"))
+        st.session_state.sim_mode = st.radio("Mod Seç:", ("Oyun Modu (Puanlı)", "Eğitim Modu (Katı Kurallı)"))
         if st.button("📲 MOBİL SİMÜLASYON", use_container_width=True): st.session_state.page = 'mobile'; st.rerun()
         st.markdown("---")
         if os.path.exists(DOSYA_ADI):
@@ -428,27 +427,32 @@ def show_backend():
             kural, kelime = kara_liste_kontrolu(user_input)
             hafiza, etiket = excel_hafiza_kontrolu(user_input)
             if kural:
-                score_neg = 0.99; karar = f"Yasaklı ({kelime})"; sonuc = "Küfür / Hakaret"; is_bullying = True
+                score_neg = 0.99; score_pos = 0.01; karar = f"Yasaklı ({kelime})" 
+                sonuc_etiketi = "Küfür / Hakaret"; is_bullying = True
             elif hafiza:
-                score_neg = 1.0; karar = "Hafıza"; sonuc = etiket; is_bullying = True
+                score_neg = 1.0; score_pos = 0.0; karar = "Hafıza" 
+                sonuc_etiketi = etiket; is_bullying = True
             else:
                 inputs = tokenizer(user_input, return_tensors="pt", truncation=True, padding=True, max_length=64)
                 outputs = model(**inputs)
                 probs = F.softmax(outputs.logits, dim=1)
                 
-                # --- MODEL UYUMLULUĞU ---
+                # --- [ÖNEMLİ DÜZELTME] MODEL TÜRÜNE GÖRE SKOR ---
                 if model_type == "cloud":
-                    score_neg = probs[0][1].item() # Cloud (Savasy): 1=Negatif
+                    # Savasy Modeli: Index 0 = Negatif, Index 1 = Pozitif
+                    score_neg = probs[0][0].item() 
                 else:
-                    score_neg = probs[0][0].item() # Local (Senin model): 0=Zorbalık
+                    # Yerel Model: Genellikle Index 0 = Zorbalık (Varsayılan)
+                    score_neg = probs[0][0].item()
 
-                karar = "Yapay Zeka"; is_bullying = score_neg > 0.60
-                sonuc = "Siber Zorbalık" if is_bullying else "Normal"
+                karar = "SiberKalkan AI"; is_bullying = score_neg > 0.60
+                sonuc_etiketi = "Siber Zorbalık" if is_bullying else "Normal"
                 
-            if is_bullying: st.error(f"🚨 TESPİT: {sonuc}"); st.progress(score_neg)
+            if is_bullying: st.error(f"🚨 TESPİT: {sonuc_etiketi}"); st.progress(score_neg)
             else: st.success("✅ GÜVENLİ"); st.progress(1.0 - score_neg)
-            st.session_state.history.insert(0, {"Metin": user_input, "Sonuç": sonuc, "Kaynak": karar})
-            veriyi_excele_kaydet(user_input, sonuc, f"{score_neg:.4f}", karar)
+            
+            st.session_state.history.insert(0, {"Metin": user_input, "Sonuç": sonuc_etiketi, "Kaynak": karar})
+            veriyi_excele_kaydet(user_input, sonuc_etiketi, f"{score_neg:.4f}", karar)
 
     st.markdown("---")
     if st.button("🗑️ Temizle"): st.session_state.history = []; st.rerun()
@@ -470,15 +474,18 @@ def show_mobile():
     with col_m:
         if not st.session_state.student_name:
             st.markdown("""<div class="login-container"><div class="login-card"><div class="login-logo">🛡️</div><div class="login-title">Giriş Yap</div></div></div>""", unsafe_allow_html=True)
-            name = st.text_input("Adın:")
-            if st.button("BAŞLA"):
-                if name: st.session_state.student_name = name; st.rerun()
+            _, c, _ = st.columns([1,2,1])
+            with c:
+                with st.form("l"):
+                    n = st.text_input("Adın:")
+                    if st.form_submit_button("BAŞLA") and n:
+                        st.session_state.student_name = n; st.rerun()
             return
 
         if st.session_state.get('breathing_phase'):
             placeholder = st.empty()
             for i in range(4, 0, -1):
-                placeholder.markdown(f"""<div class="tablet-screen-top"><div class="calm-circle">{i}</div><div class="calm-text">Sakinleş...</div></div>""", unsafe_allow_html=True)
+                placeholder.markdown(f"""<div class="tablet-screen-top" style="justify-content:center; align-items:center;"><div class="calm-circle">{i}</div><div class="calm-text">Sakinleş...</div></div>""", unsafe_allow_html=True)
                 time.sleep(1.2)
             st.session_state.breathing_phase = False
             st.session_state.alert_active = True
@@ -517,11 +524,11 @@ def show_mobile():
                             outputs = model(**inputs)
                             probs = F.softmax(outputs.logits, dim=1)
                             
-                            # --- MODEL UYUMLULUĞU (MOBİL) ---
+                            # --- [ÖNEMLİ DÜZELTME] MOBİL SKORLAMA ---
                             if model_type == "cloud":
-                                neg_score = probs[0][1].item()
+                                neg_score = probs[0][0].item() # Cloud: Index 0 = Negatif
                             else:
-                                neg_score = probs[0][0].item()
+                                neg_score = probs[0][0].item() # Local: Index 0
 
                             if neg_score > 0.60: bad=True; reason="Zorbalık"; typ="Siber Zorbalık"
                         
@@ -557,7 +564,7 @@ def show_mobile():
                             st.session_state.alert_active = False
                             st.balloons()
                             veriyi_excele_kaydet(st.session_state.temp_bad_msg, "Engellendi", "1.0", "Mobil-Vazgeçti")
-                            # --- DÜZELTME: RAPORA EKLEME ---
+                            # [KRİTİK EKLEME] Vazgeçileni Rapora Ekle
                             st.session_state.history.insert(0, {"Metin": st.session_state.temp_bad_msg, "Sonuç": "Engellendi (Vazgecti)", "Kaynak": "Mobil"})
                             time.sleep(1); st.rerun()
                     with c2:
@@ -573,10 +580,11 @@ def show_mobile():
                     if st.form_submit_button("✍️ Düzelt"):
                         st.session_state.alert_active = False
                         veriyi_excele_kaydet(st.session_state.temp_bad_msg, "Engellendi", "1.0", "Eğitim")
-                        # --- DÜZELTME: RAPORA EKLEME ---
+                        # [KRİTİK EKLEME] Eğitimi Rapora Ekle
                         st.session_state.history.insert(0, {"Metin": st.session_state.temp_bad_msg, "Sonuç": "Engellendi (Eğitim)", "Kaynak": "Mobil"})
                         st.rerun()
 
+# --- YÖNLENDİRME ---
 if st.session_state.page == 'backend': show_backend()
 elif st.session_state.page == 'mobile': show_mobile()
 elif st.session_state.page == 'data_editor': show_data_editor()
